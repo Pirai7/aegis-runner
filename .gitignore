@@ -1,0 +1,15 @@
+# Binaries and executables
+aegis
+aegis-bin
+*.exe
+*.test
+
+# Environment files
+.env
+.env.local
+
+# OS and IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp

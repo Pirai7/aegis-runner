@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aegis
+    ports:
+      - "5432:5432"
+    volumes:
+      - aegis_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aegis"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  aegis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-runner
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/aegis?sslmode=disable
+      - PORT=8080
+      - WORKER_CONCURRENCY=5
+      - REAPER_INTERVAL_SEC=5
+      - REAPER_TTL_SEC=15
+
+volumes:
+  aegis_pgdata:

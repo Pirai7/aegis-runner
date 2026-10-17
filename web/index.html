@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AEGIS Runner // Orchestration Control Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            zinc: {
+              850: '#1e1e24',
+              900: '#18181b',
+              950: '#09090b',
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #09090b; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen font-sans antialiased text-xs md:text-sm selection:bg-zinc-800">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-zinc-800 bg-zinc-900/80 sticky top-0 z-50 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-3 h-3 bg-emerald-500 rounded-sm"></div>
+        <span class="font-mono text-sm tracking-widest uppercase font-semibold text-zinc-100">AEGIS RUNNER</span>
+        <span class="text-zinc-500 font-mono text-xs">| ENGINE v1.0.0</span>
+      </div>
+
+      <div class="flex items-center space-x-6">
+        <div class="flex items-center space-x-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="font-mono text-xs text-zinc-400">ENGINE: <span class="text-emerald-400 font-medium">OPERATIONAL</span></span>
+        </div>
+        <div class="hidden sm:flex items-center space-x-2 border-l border-zinc-800 pl-4">
+          <span id="sse-status-dot" class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="sse-status-text" class="font-mono text-xs text-zinc-400">STREAM: ACTIVE</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Global Metrics Counters Bar -->
+  <section class="border-b border-zinc-800 bg-zinc-900/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Ingested</div>
+        <div id="stat-ingested" class="text-lg font-mono font-semibold text-zinc-100 mt-1">0</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Pending</div>
+        <div id="stat-pending" class="text-lg font-mono font-semibold text-zinc-400 mt-1">0</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Running</div>
+        <div id="stat-running" class="text-lg font-mono font-semibold text-amber-400 mt-1">0</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Completed</div>
+        <div id="stat-completed" class="text-lg font-mono font-semibold text-emerald-400 mt-1">0</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Workers</div>
+        <div id="stat-workers" class="text-lg font-mono font-semibold text-cyan-400 mt-1">0 / 5</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Recovered</div>
+        <div id="stat-recovered" class="text-lg font-mono font-semibold text-purple-400 mt-1">0</div>
+      </div>
+      <div class="p-3 bg-zinc-900 border border-zinc-800 rounded">
+        <div class="text-zinc-500 text-xs font-mono uppercase">Dropped</div>
+        <div id="stat-dropped" class="text-lg font-mono font-semibold text-emerald-500 mt-1">0</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Multi-Column Content Area -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Top Grid: Task Studio, DRR Monitor, and Chaos Panel -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Column 1: Task Submission Studio (5 cols) -->
+      <div class="lg:col-span-5 bg-zinc-900 border border-zinc-800 rounded p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h2 class="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-300">Task Ingestion Studio</h2>
+            <span class="text-zinc-500 font-mono text-xs">POST /api/v1/jobs</span>
+          </div>
+
+          <form id="task-form" class="mt-4 space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-zinc-400 font-mono text-xs mb-1">Tenant ID</label>
+                <select id="form-tenant" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 font-mono text-xs text-zinc-100 focus:outline-none focus:border-zinc-600">
+                  <option value="tenant-alpha">tenant-alpha (Batch)</option>
+                  <option value="tenant-beta">tenant-beta (Transactional)</option>
+                  <option value="tenant-billing-corp">tenant-billing-corp</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-zinc-400 font-mono text-xs mb-1">Action Name</label>
+                <input id="form-action" type="text" value="process_invoice" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 font-mono text-xs text-zinc-100 focus:outline-none focus:border-zinc-600">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-zinc-400 font-mono text-xs mb-1">Idempotency Key (Optional)</label>
+              <input id="form-idempotency" type="text" placeholder="e.g. req-invoice-9821" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 font-mono text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600">
+            </div>
+
+            <div>
+              <label class="block text-zinc-400 font-mono text-xs mb-1">Payload JSON</label>
+              <textarea id="form-payload" rows="4" class="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 font-mono text-xs text-zinc-100 focus:outline-none focus:border-zinc-600">{
+  "amount": 250.00,
+  "currency": "USD",
+  "customer_id": "cust-8492",
+  "duration_ms": 4000
+}</textarea>
+            </div>
+
+            <div class="pt-1">
+              <button type="submit" class="w-full bg-zinc-100 hover:bg-white text-zinc-950 font-mono font-medium py-2 rounded text-xs uppercase tracking-wider transition-colors">
+                Submit Task
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Pre-Configured Test Workloads -->
+        <div class="mt-4 pt-3 border-t border-zinc-800">
+          <div class="text-zinc-500 font-mono text-xs uppercase tracking-wider mb-2">Preset Workload Triggers:</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btn-flood-batch" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-xs py-1.5 px-2 rounded border border-zinc-700/50 text-left truncate">
+              [+] Flood 50 (Tenant A)
+            </button>
+            <button id="btn-priority-task" class="bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-mono text-xs py-1.5 px-2 rounded border border-emerald-900/50 text-left truncate">
+              [!] 1 Urgent (Tenant B)
+            </button>
+            <button id="btn-test-idempotency" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-xs py-1.5 px-2 rounded border border-zinc-700/50 text-left truncate col-span-2">
+              [#] Send Duplicate Idempotency Key
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 2: DRR Fair-Share Monitor & Concurrency Quotas (4 cols) -->
+      <div class="lg:col-span-4 bg-zinc-900 border border-zinc-800 rounded p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h2 class="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-300">Tenant Fair-Share (DRR)</h2>
+            <span class="text-zinc-500 font-mono text-xs">Deficit Round-Robin</span>
+          </div>
+
+          <div id="tenant-list" class="mt-4 space-y-4">
+            <!-- Dynamic Tenant Cards will be inserted here -->
+            <div class="text-zinc-500 font-mono text-xs">Loading tenant quotas...</div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-zinc-800 text-zinc-500 font-mono text-xs space-y-1">
+          <div>ALGORITHM: Deficit Round-Robin (DRR)</div>
+          <div>ANTI-STARVATION: Active per-tenant credit counters</div>
+          <div>ISOLATION: Strict DB query scoping by tenant_id</div>
+        </div>
+      </div>
+
+      <!-- Column 3: Chaos Verification Console (3 cols) -->
+      <div class="lg:col-span-3 bg-zinc-900 border border-zinc-800 rounded p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h2 class="font-mono text-xs font-semibold uppercase tracking-wider text-rose-400">Chaos Engine</h2>
+            <span class="text-zinc-500 font-mono text-xs">Active Fault Injection</span>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            <div class="text-zinc-400 text-xs leading-relaxed">
+              Trigger abrupt worker terminations to verify 5s lease heartbeats, 15s zero-drop reaper recovery, and idempotency guarantees.
+            </div>
+
+            <button id="btn-kill-worker" class="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-mono text-xs font-medium py-2 px-3 rounded transition-colors text-left flex items-center justify-between">
+              <span>KILL ACTIVE WORKER</span>
+              <span class="text-rose-500 font-mono text-xs">SIGKILL</span>
+            </button>
+
+            <button id="btn-toggle-latency" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-mono text-xs py-2 px-3 rounded transition-colors text-left flex items-center justify-between">
+              <span>INJECT 500MS LATENCY</span>
+              <span id="latency-indicator" class="font-mono text-xs text-zinc-500">OFF</span>
+            </button>
+
+            <div class="p-3 bg-zinc-950 border border-zinc-800 rounded space-y-1 font-mono text-xs">
+              <div class="text-zinc-500">HEARTBEAT TTL: <span class="text-zinc-300">15s</span></div>
+              <div class="text-zinc-500">REFRESH INTERVAL: <span class="text-zinc-300">5s</span></div>
+              <div class="text-zinc-500">RECOVERY GUARANTEE: <span class="text-emerald-400">ZERO-DROP</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="chaos-alert-box" class="hidden mt-4 p-2.5 bg-rose-950/40 border border-rose-800/60 rounded text-rose-300 font-mono text-xs">
+          <!-- Live chaos alert feedback -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Section: Real-Time Event Stream & Jobs Inspector -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Real-Time SSE Stream (7 cols) -->
+      <div class="lg:col-span-7 bg-zinc-900 border border-zinc-800 rounded p-4 flex flex-col h-[480px]">
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+          <div class="flex items-center space-x-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+            <h2 class="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-300">Real-Time Event Stream</h2>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button id="btn-clear-stream" class="text-zinc-500 hover:text-zinc-300 font-mono text-xs uppercase">Clear</button>
+            <span class="text-zinc-700">|</span>
+            <span class="font-mono text-xs text-zinc-500">SSE: /api/v1/stream/events</span>
+          </div>
+        </div>
+
+        <div id="event-stream-container" class="mt-3 flex-1 overflow-y-auto font-mono text-xs space-y-1.5 pr-1">
+          <!-- Real-time log entries will be prepended here -->
+        </div>
+      </div>
+
+      <!-- Active & Recent Jobs Inspector (5 cols) -->
+      <div class="lg:col-span-5 bg-zinc-900 border border-zinc-800 rounded p-4 flex flex-col h-[480px]">
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+          <h2 class="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-300">Jobs Inspector</h2>
+          <button id="btn-refresh-jobs" class="text-zinc-400 hover:text-zinc-200 font-mono text-xs uppercase">Refresh</button>
+        </div>
+
+        <div id="jobs-table-container" class="mt-3 flex-1 overflow-y-auto font-mono text-xs space-y-2 pr-1">
+          <!-- Jobs list will be rendered here -->
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Job Details Modal -->
+  <div id="job-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded max-w-2xl w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div class="flex items-center space-x-2">
+          <span class="font-mono text-xs uppercase text-zinc-500">Job Handle:</span>
+          <span id="modal-job-id" class="font-mono text-xs text-zinc-100 font-semibold"></span>
+        </div>
+        <button id="modal-close" class="text-zinc-500 hover:text-zinc-200 font-mono text-sm">ESC [X]</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 font-mono text-xs">
+        <div>
+          <span class="text-zinc-500">Tenant:</span>
+          <span id="modal-tenant" class="text-zinc-200 ml-1"></span>
+        </div>
+        <div>
+          <span class="text-zinc-500">Status:</span>
+          <span id="modal-status" class="ml-1"></span>
+        </div>
+        <div>
+          <span class="text-zinc-500">Attempts:</span>
+          <span id="modal-attempts" class="text-zinc-200 ml-1"></span>
+        </div>
+        <div>
+          <span class="text-zinc-500">Worker Lease:</span>
+          <span id="modal-worker" class="text-zinc-200 ml-1"></span>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-zinc-500 font-mono text-xs uppercase mb-1">Payload:</div>
+        <pre id="modal-payload" class="p-3 bg-zinc-950 border border-zinc-800 rounded font-mono text-xs text-zinc-300 overflow-x-auto max-h-36"></pre>
+      </div>
+
+      <div>
+        <div class="text-zinc-500 font-mono text-xs uppercase mb-1">Execution Trail:</div>
+        <div id="modal-logs" class="p-3 bg-zinc-950 border border-zinc-800 rounded font-mono text-xs text-zinc-400 space-y-1 max-h-36 overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
