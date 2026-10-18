@@ -32,8 +32,9 @@ variable "db_admin_password" {
 variable "container_image" {
   description = "Container image URI"
   type        = string
-  default     = "mcr.microsoft.com/azuredocs/aci-helloworld:latest"
+  default     = "ghcr.io/pirai7/aegis-runner:v1"
 }
+
 
 variable "worker_concurrency" {
   description = "Number of worker threads inside container"
