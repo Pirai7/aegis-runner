@@ -13,14 +13,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Build Docker Image
+        run: |
+          docker build -t aegisrunnerreg01.azurecr.io/aegis-runner:v1 .
+      
       - name: Log in to Azure Container Registry
+        if: ${{ secrets.ACR_PASSWORD != '' }}
         uses: azure/docker-login@v2
         with:
           login-server: aegisrunnerreg01.azurecr.io
           username: aegisrunnerreg01
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build & Push Docker Image
+      - name: Push Docker Image
+        if: ${{ secrets.ACR_PASSWORD != '' }}
         run: |
-          docker build -t aegisrunnerreg01.azurecr.io/aegis-runner:v1 .
           docker push aegisrunnerreg01.azurecr.io/aegis-runner:v1
+
+      - name: Skip push when ACR password is unavailable
+        if: ${{ secrets.ACR_PASSWORD == '' }}
+        run: echo "ACR_PASSWORD is not configured; image push was skipped."
