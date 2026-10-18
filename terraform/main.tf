@@ -127,7 +127,7 @@ resource "azurerm_container_app" "app" {
 
       env {
         name  = "DATABASE_URL"
-        value = "postgres://${var.db_admin_user}:${var.db_admin_password}@${azurerm_postgresql_flexible_server.db.fqdn}:5432/aegis?sslmode=require"
+        value = "postgres://${var.db_admin_user}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.db.fqdn}:5432/aegis?sslmode=require"
       }
       env {
         name  = "PORT"
