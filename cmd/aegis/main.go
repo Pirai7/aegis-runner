@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,10 +55,43 @@ func main() {
 		}
 	}
 
-	// 2. Database connection & auto-migration
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
+	// Start listening before database setup so liveness checks work while
+	// PostgreSQL connects and schema migrations run.
+	type handlerHolder struct{ handler http.Handler }
+	var activeHandler atomic.Value
+	activeHandler.Store(handlerHolder{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"starting","service":"aegis-runner"}`))
+			return
+		}
+		if r.URL.Path == "/readyz" {
+			http.Error(w, `{"status":"starting"}`, http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, `{"error":"service is starting"}`, http.StatusServiceUnavailable)
+	})})
+	server := &http.Server{
+		Addr: ":" + port,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			activeHandler.Load().(handlerHolder).handler.ServeHTTP(w, r)
+		}),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	go func() {
+		log.Printf("[AEGIS] HTTP server listening on :%s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[AEGIS] Server error: %v", err)
+		}
+	}()
+
+	// Enable application routes only after database initialization and migrations.
 	database, err := db.New(rootCtx, dbURL)
 	if err != nil {
 		log.Fatalf("[AEGIS] Fatal error connecting to database: %v", err)
@@ -85,21 +119,8 @@ func main() {
 	// 5. Setup Router with embedded web UI
 	router := api.SetupRouter(apiHandler, eventBus, chaosEngine, web.DistFS)
 
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	// Server goroutine
-	go func() {
-		log.Printf("[AEGIS] HTTP server listening on http://localhost:%s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[AEGIS] Server error: %v", err)
-		}
-	}()
+	activeHandler.Store(handlerHolder{router})
+	log.Println("[AEGIS] API is ready to accept traffic.")
 
 	// 6. Graceful shutdown listener
 	stopSignals := make(chan os.Signal, 1)

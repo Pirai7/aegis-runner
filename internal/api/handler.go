@@ -175,11 +175,11 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Publish Event
 	h.events.Publish(Event{
-		Type:      "JOB_ENQUEUED",
-		JobID:     newJobID,
-		TenantID:  tenantID,
-		Attempts:  0,
-		Message:   fmt.Sprintf("Job enqueued for tenant %s", tenantID),
+		Type:     "JOB_ENQUEUED",
+		JobID:    newJobID,
+		TenantID: tenantID,
+		Attempts: 0,
+		Message:  fmt.Sprintf("Job enqueued for tenant %s", tenantID),
 	})
 
 	h.writeJSON(w, http.StatusAccepted, map[string]any{
@@ -440,8 +440,15 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, stats)
 }
 
-// Healthz handles GET /healthz and /readyz.
+// Healthz handles GET /healthz without depending on external services.
 func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"healthy","service":"aegis-runner"}`))
+}
+
+// Readyz handles GET /readyz and reports whether PostgreSQL is reachable.
+func (h *Handler) Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
@@ -453,7 +460,7 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status": "healthy", "service": "aegis-runner"}`))
+	_, _ = w.Write([]byte(`{"status":"ready","service":"aegis-runner"}`))
 }
 
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, data any) {

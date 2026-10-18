@@ -35,7 +35,7 @@ func SetupRouter(handler *Handler, events *EventBus, chaos ChaosInterface, stati
 
 	// Health probes
 	r.Get("/healthz", handler.Healthz)
-	r.Get("/readyz", handler.Healthz)
+	r.Get("/readyz", handler.Readyz)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
