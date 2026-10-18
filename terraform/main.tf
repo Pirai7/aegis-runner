@@ -86,8 +86,26 @@ resource "azurerm_container_app" "app" {
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
 
+  dynamic "secret" {
+    for_each = var.acr_password != "" ? [1] : []
+    content {
+      name  = "acr-password"
+      value = var.acr_password
+    }
+  }
+
+  dynamic "registry" {
+    for_each = var.acr_password != "" ? [1] : []
+    content {
+      server               = "aegisrunnerreg01.azurecr.io"
+      username             = "aegisrunnerreg01"
+      password_secret_name = "acr-password"
+    }
+  }
+
   ingress {
     external_enabled = true
+
     target_port      = 8080
     transport        = "auto"
 

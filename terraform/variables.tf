@@ -41,3 +41,11 @@ variable "worker_concurrency" {
   type        = number
   default     = 10
 }
+
+variable "acr_password" {
+  description = "Azure Container Registry admin password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
