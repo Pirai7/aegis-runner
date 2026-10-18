@@ -10,6 +10,9 @@ RUN apk add --no-cache git ca-certificates
 # Copy source tree
 COPY . .
 
+# Ensure module dependencies are tidied inside builder
+RUN go mod tidy
+
 # Compile static binary with zero external runtime dependencies
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w -extldflags '-static'" \
