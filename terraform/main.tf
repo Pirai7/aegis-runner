@@ -6,6 +6,13 @@ terraform {
       version = "~> 3.100"
     }
   }
+
+  backend "azurerm" {
+    resource_group_name  = "aegis-rg"
+    storage_account_name = "aegistfstate01"
+    container_name       = "tfstate"
+    key                  = "aegis.terraform.tfstate"
+  }
 }
 
 provider "azurerm" {
