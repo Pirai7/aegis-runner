@@ -1,15 +1,11 @@
 # Multi-stage build for AEGIS Runner Engine
 # Stage 1: Build static Go binary
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /src
 
 # Install build tools & CA certificates
 RUN apk add --no-cache git ca-certificates
-
-# Cache dependencies
-COPY go.mod go.sum ./
-RUN go mod download
 
 # Copy source tree
 COPY . .
