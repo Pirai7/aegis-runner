@@ -55,6 +55,8 @@ func main() {
 		}
 	}
 
+	chaosEnabled := os.Getenv("CHAOS_ENABLED") == "true"
+
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
@@ -117,7 +119,7 @@ func main() {
 	heartbeatReaper.Start(rootCtx)
 
 	// 5. Setup Router with embedded web UI
-	router := api.SetupRouter(apiHandler, eventBus, chaosEngine, web.DistFS)
+	router := api.SetupRouter(apiHandler, eventBus, chaosEngine, web.DistFS, chaosEnabled)
 
 	activeHandler.Store(handlerHolder{router})
 	log.Println("[AEGIS] API is ready to accept traffic.")

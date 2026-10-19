@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,15 +27,16 @@ type ActiveExecution struct {
 
 // Pool coordinates concurrent background worker loops.
 type Pool struct {
-	db            *db.DB
-	events        *api.EventBus
-	taskChan      <-chan scheduler.JobTask
-	concurrency   int
-	activeMu      sync.RWMutex
-	activeJobs    map[string]*ActiveExecution
-	activeWorkers int32
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
+	db                *db.DB
+	events            *api.EventBus
+	taskChan          <-chan scheduler.JobTask
+	concurrency       int
+	heartbeatInterval time.Duration
+	activeMu          sync.RWMutex
+	activeJobs        map[string]*ActiveExecution
+	activeWorkers     int32
+	stopChan          chan struct{}
+	wg                sync.WaitGroup
 
 	// Metrics
 	totalIngested int64
@@ -44,13 +47,28 @@ type Pool struct {
 
 // New creates an initialized worker pool.
 func New(database *db.DB, events *api.EventBus, taskChan <-chan scheduler.JobTask, concurrency int) *Pool {
+	hbInterval := 5 * time.Second
+	if hStr := os.Getenv("HEARTBEAT_INTERVAL_SEC"); hStr != "" {
+		if s, err := strconv.Atoi(hStr); err == nil && s > 0 {
+			hbInterval = time.Duration(s) * time.Second
+		}
+	}
+
 	return &Pool{
-		db:          database,
-		events:      events,
-		taskChan:    taskChan,
-		concurrency: concurrency,
-		activeJobs:  make(map[string]*ActiveExecution),
-		stopChan:    make(chan struct{}),
+		db:                database,
+		events:            events,
+		taskChan:          taskChan,
+		concurrency:       concurrency,
+		heartbeatInterval: hbInterval,
+		activeJobs:        make(map[string]*ActiveExecution),
+		stopChan:          make(chan struct{}),
+	}
+}
+
+// SetHeartbeatInterval updates the heartbeat interval.
+func (p *Pool) SetHeartbeatInterval(d time.Duration) {
+	if d > 0 {
+		p.heartbeatInterval = d
 	}
 }
 
@@ -213,10 +231,10 @@ func (p *Pool) executeTask(parentCtx context.Context, workerID string, task sche
 		Message:   fmt.Sprintf("Execution started on %s", workerID),
 	})
 
-	// 3. Launch 5-second background heartbeat loop
+	// 3. Launch background heartbeat loop
 	heartbeatStop := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(p.heartbeatInterval)
 		defer ticker.Stop()
 
 		for {
@@ -242,7 +260,7 @@ func (p *Pool) executeTask(parentCtx context.Context, workerID string, task sche
 						TenantID:  task.TenantID,
 						WorkerID:  workerID,
 						Attempts:  task.Attempts,
-						Message:   fmt.Sprintf("Worker %s refreshed 5s lease heartbeat", workerID),
+						Message:   fmt.Sprintf("Worker %s refreshed lease heartbeat", workerID),
 					})
 				}
 			}
@@ -327,13 +345,18 @@ func (p *Pool) handleTaskSuccess(ctx context.Context, task scheduler.JobTask, wo
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	result, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET status = 'COMPLETED', finished_at = NOW()
-		WHERE id = $1
-	`, task.ID)
+		WHERE id = $1 AND attempts = $2 AND status = 'RUNNING'
+	`, task.ID, task.Attempts)
 	if err != nil {
 		log.Printf("[%s] Failed to mark job %s completed: %v", workerID, task.ID, err)
+		return
+	}
+	if result.RowsAffected() == 0 {
+		log.Printf("[%s] Stale worker ignored for job %s (fencing check failed)", workerID, task.ID)
+		p.logEvent(ctx, task.ID, "WORKER_FENCING_REJECTED", fmt.Sprintf("Stale worker %s ignored on completion for attempt %d", workerID, task.Attempts))
 		return
 	}
 
@@ -374,18 +397,31 @@ func (p *Pool) handleTaskFailure(ctx context.Context, task scheduler.JobTask, wo
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	result, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET status = $2, finished_at = CASE WHEN $2 = 'FAILED' THEN NOW() ELSE NULL END
-		WHERE id = $1
-	`, task.ID, finalStatus)
+		WHERE id = $1 AND attempts = $3 AND status = 'RUNNING'
+	`, task.ID, finalStatus, task.Attempts)
 	if err != nil {
 		log.Printf("[%s] Failed to record job failure for %s: %v", workerID, task.ID, err)
 		return
 	}
+	if result.RowsAffected() == 0 {
+		log.Printf("[%s] Stale worker ignored for job failure %s (fencing check failed)", workerID, task.ID)
+		p.logEvent(ctx, task.ID, "WORKER_FENCING_REJECTED", fmt.Sprintf("Stale worker %s ignored on failure for attempt %d", workerID, task.Attempts))
+		return
+	}
 
-	_, _ = tx.Exec(ctx, `DELETE FROM worker_leases WHERE job_id = $1`, task.ID)
-	_ = tx.Commit(ctx)
+	_, err = tx.Exec(ctx, `DELETE FROM worker_leases WHERE job_id = $1`, task.ID)
+	if err != nil {
+		log.Printf("[%s] Failed to delete worker lease for job %s: %v", workerID, task.ID, err)
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("[%s] Failed to commit failure for job %s: %v", workerID, task.ID, err)
+		return
+	}
 
 	p.logEvent(ctx, task.ID, "JOB_FAILED", fmt.Sprintf("Failed on %s: %v", workerID, failErr))
 	p.events.Publish(api.Event{

@@ -75,7 +75,7 @@ func (e *Engine) HandleFlood(w http.ResponseWriter, r *http.Request) {
 		req.TenantID = "tenant-alpha"
 	}
 	if req.Count <= 0 || req.Count > 500 {
-		req.Count = 50
+		req.Count = 200
 	}
 
 	// Launch background flood insertion
@@ -128,4 +128,13 @@ func (e *Engine) HandleLatency(w http.ResponseWriter, r *http.Request) {
 		"simulated_delay_ms": req.DelayMs,
 		"status":             "configured",
 	})
+}
+
+// GetLatency returns the simulated latency duration if configured.
+func (e *Engine) GetLatency() time.Duration {
+	d := atomic.LoadInt64(&e.simLatency)
+	if d > 0 {
+		return time.Duration(d) * time.Millisecond
+	}
+	return 0
 }

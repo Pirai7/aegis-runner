@@ -66,7 +66,7 @@ AEGIS eliminates multi-service broker sprawl (no Redis, no RabbitMQ, no Kafka cl
 ### ADR-002: Azure Container Apps Over AWS ECS Fargate
 * **Context:** Selecting the optimal cloud runtime for containerized orchestration.
 * **Decision:** Deploy on Azure Container Apps backed by Azure Database for PostgreSQL.
-* **Rationale:** AWS ECS Fargate requires an Application Load Balancer, Target Groups, ACM certs, and an AWS NAT Gateway costing ~$32+/month in flat baseline overhead for private subnet connectivity. AWS ALBs also drop long-lived SSE connections after 60 seconds. Azure Container Apps provides native Envoy ingress (free TLS), zero-config HTTP/2 SSE streaming, zero NAT gateway taxes, and native KEDA autoscaling in a clean, single Terraform module.
+* **Rationale:** AWS ECS Fargate requires an Application Load Balancer, Target Groups, ACM certs, and an AWS NAT Gateway costing ~$32+/month in flat baseline overhead for private subnet connectivity, with ALB idle timeouts defaulting to 60 seconds requiring custom keep-alive tuning. Azure Container Apps provides native Envoy ingress (free TLS, managed idle timeouts), zero-config HTTP/2 SSE streaming, zero NAT gateway taxes, and native KEDA autoscaling in a clean, single Terraform module.
 
 ### ADR-003: Deficit Round-Robin (DRR) Fair-Share Scheduling
 * **Context:** Preventing noisy-neighbor starvation in multi-tenant background processing.
@@ -88,8 +88,8 @@ All queue operations rely on atomic row-level locking within ultra-short transac
 -- Atomic Dequeue Query:
 WITH next_job AS (
     SELECT id FROM jobs 
-    WHERE status = 'PENDING' AND scheduled_for <= NOW()
-    ORDER BY scheduled_for ASC
+    WHERE tenant_id = $1 AND status = 'PENDING' AND scheduled_for <= NOW()
+    ORDER BY scheduled_for ASC, created_at ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
@@ -97,7 +97,7 @@ UPDATE jobs j
 SET status = 'RUNNING', started_at = NOW(), attempts = attempts + 1
 FROM next_job
 WHERE j.id = next_job.id
-RETURNING j.id, j.tenant_id, j.payload, j.attempts;
+RETURNING j.id, j.tenant_id, j.payload, j.attempts, j.max_attempts;
 ```
 
 ### Core Schema Tables:
@@ -214,7 +214,7 @@ az postgres flexible-server create \
   --resource-group aegis-rg \
   --name aegis-postgres-db \
   --admin-user aegisadmin \
-  --admin-password "StrongPassword123!" \
+  --admin-password "${AZURE_POSTGRES_PASSWORD}" \
   --sku-name Standard_B1ms \
   --tier Burstable
 
@@ -226,8 +226,11 @@ az containerapp create \
   --environment aegis-env \
   --ingress external \
   --target-port 8080 \
-  --env-vars DATABASE_URL="postgres://aegisadmin:StrongPassword123!@aegis-postgres-db.postgres.database.azure.com:5432/postgres?sslmode=require"
+  --env-vars DATABASE_URL="postgres://aegisadmin:${AZURE_POSTGRES_PASSWORD}@aegis-postgres-db.postgres.database.azure.com:5432/postgres?sslmode=require"
 ```
+
+> [!NOTE]
+> Ensure `${AZURE_POSTGRES_PASSWORD}` is replaced with a strong, securely generated password stored in Azure Key Vault or environment secrets. Never commit plaintext credentials to version control.
 
 ---
 

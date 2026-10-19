@@ -529,7 +529,7 @@ Create a clean, responsive single HTML file (Tailwind CSS, dark slate palette, z
      --resource-group aegis-rg \
      --name aegis-postgres-db \
      --admin-user aegisadmin \
-     --admin-password "StrongPassword123!" \
+     --admin-password "${AZURE_POSTGRES_PASSWORD}" \
      --sku-name Standard_B1ms \
      --tier Burstable
 
@@ -540,7 +540,7 @@ Create a clean, responsive single HTML file (Tailwind CSS, dark slate palette, z
      --environment aegis-env \
      --ingress external \
      --target-port 8080 \
-     --env-vars DATABASE_URL="postgres://aegisadmin:StrongPassword123!@aegis-postgres-db.postgres.database.azure.com:5432/postgres?sslmode=require"
+     --env-vars DATABASE_URL="postgres://aegisadmin:${AZURE_POSTGRES_PASSWORD}@aegis-postgres-db.postgres.database.azure.com:5432/postgres?sslmode=require"
    ```
 
 ---

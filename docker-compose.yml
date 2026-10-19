@@ -34,6 +34,7 @@ services:
       - WORKER_CONCURRENCY=5
       - REAPER_INTERVAL_SEC=5
       - REAPER_TTL_SEC=15
+      - CHAOS_ENABLED=true
 
 volumes:
   aegis_pgdata:

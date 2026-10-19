@@ -345,14 +345,19 @@
       const res = await fetch(`${API_BASE}/chaos/flood`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenant_id: 'tenant-alpha', count: 50 })
+        body: JSON.stringify({ tenant_id: 'tenant-alpha', count: 200 })
       });
       const data = await res.json();
-      showChaosAlert(`Flood enqueued: 50 batch tasks for tenant-alpha`);
+      if (!res.ok) {
+        showChaosAlert(`[CHAOS ERROR] ${data.error || 'Failed to trigger flood'}`);
+        return;
+      }
+      showChaosAlert(`Flood enqueued: 200 batch tasks for tenant-alpha`);
       refreshStats();
       refreshTenants();
     } catch (err) {
       console.error('Flood error:', err);
+      showChaosAlert(`[CHAOS ERROR] Network failure triggering flood`);
     }
   };
 
@@ -436,6 +441,7 @@
       refreshStats();
     } catch (err) {
       console.error('Kill worker error:', err);
+      showChaosAlert(`[CHAOS ERROR] Network failure triggering worker kill`);
     }
   };
 
@@ -443,16 +449,24 @@
     simulatedLatencyActive = !simulatedLatencyActive;
     const delay = simulatedLatencyActive ? 500 : 0;
     try {
-      await fetch(`${API_BASE}/chaos/latency`, {
+      const res = await fetch(`${API_BASE}/chaos/latency`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delay_ms: delay })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        simulatedLatencyActive = !simulatedLatencyActive; // revert state
+        showChaosAlert(`[CHAOS ERROR] ${data.error || 'Failed to toggle latency'}`);
+        return;
+      }
       latencyIndicator.textContent = simulatedLatencyActive ? '500MS' : 'OFF';
       latencyIndicator.className = simulatedLatencyActive ? 'font-mono text-xs text-amber-400 font-semibold' : 'font-mono text-xs text-zinc-500';
       showChaosAlert(`Simulated database latency set to ${delay}ms`);
     } catch (err) {
+      simulatedLatencyActive = !simulatedLatencyActive; // revert state
       console.error('Latency error:', err);
+      showChaosAlert(`[CHAOS ERROR] Network failure toggling latency`);
     }
   };
 

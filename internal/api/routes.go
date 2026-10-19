@@ -17,7 +17,7 @@ type ChaosInterface interface {
 }
 
 // SetupRouter creates the Chi HTTP router.
-func SetupRouter(handler *Handler, events *EventBus, chaos ChaosInterface, staticFS fs.FS) *chi.Mux {
+func SetupRouter(handler *Handler, events *EventBus, chaos ChaosInterface, staticFS fs.FS, chaosEnabled bool) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -52,10 +52,21 @@ func SetupRouter(handler *Handler, events *EventBus, chaos ChaosInterface, stati
 		// Real-time Event Streaming
 		r.Get("/stream/events", events.ServeSSE)
 
-		// Chaos Controls
-		r.Post("/chaos/kill-worker", chaos.HandleKillWorker)
-		r.Post("/chaos/flood", chaos.HandleFlood)
-		r.Post("/chaos/latency", chaos.HandleLatency)
+		// Chaos Controls (gated behind CHAOS_ENABLED)
+		if chaosEnabled {
+			r.Post("/chaos/kill-worker", chaos.HandleKillWorker)
+			r.Post("/chaos/flood", chaos.HandleFlood)
+			r.Post("/chaos/latency", chaos.HandleLatency)
+		} else {
+			disabledChaosHandler := func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"chaos endpoints are disabled"}`))
+			}
+			r.Post("/chaos/kill-worker", disabledChaosHandler)
+			r.Post("/chaos/flood", disabledChaosHandler)
+			r.Post("/chaos/latency", disabledChaosHandler)
+		}
 	})
 
 	// Static Frontend Serving
